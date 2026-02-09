@@ -1,3 +1,4 @@
+from app.services.rate_limit import can_reply, mark_replied
 from app.services.conversation import (
     get_conversation,
     append_user_message,
@@ -81,12 +82,19 @@ async def receive_message(request: Request):
     SEEN_MESSAGE_IDS.add(message_id)
 
     reply_text = "Signal Received"
+    # ⏱️ Rate limit gate
+    # ⏱️ Rate limit gate (BEFORE sending)
+    if not can_reply(sender):
+        return {"status": "rate_limited"}
 
-    # 🚀 Send reply
     try:
         send_message(sender, reply_text)
     except Exception as e:
         print("SEND FAILED:", e)
+        return {"status": "send_failed"}
+
+# ✅ Mark reply ONLY after successful send
+    mark_replied(sender)
 
     # 🧠 Update conversation state
     append_user_message(sender, text)
