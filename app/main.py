@@ -1,9 +1,7 @@
-from app.services.rate_limit import can_reply, mark_replied
-from app.services.conversation import (
-    get_conversation,
-    append_user_message,
-    append_myno_message
-)
+from app.services.conversation import append_user_message
+from app.services.debounce import schedule
+from app.core.config import DEBOUNCE_SECONDS
+
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -39,16 +37,14 @@ async def verify_webhook(request: Request):
 
 @app.post("/webhook")
 async def receive_message(request: Request):
-    body = await request.body()
+        body = await request.body()
 
-    # 🔐 Signature check (bypassed only in test mode)
     if os.getenv("MYNO_TEST_MODE") != "true":
         try:
             verify_meta_signature(request, body)
         except Exception:
             return PlainTextResponse("Unauthorized", status_code=401)
 
-    # 🔒 Parse payload safely
     try:
         data = json.loads(body)
         entry = data.get("entry", [])[0]
@@ -57,7 +53,6 @@ async def receive_message(request: Request):
     except Exception:
         return {"status": "ignored_malformed"}
 
-    # 🔕 Ignore non-message events
     messages = value.get("messages")
     if not isinstance(messages, list) or not messages:
         return {"status": "ignored_non_message"}
@@ -75,29 +70,17 @@ async def receive_message(request: Request):
     if msg_type != "text":
         return {"status": "ignored_non_text"}
 
-    # 🔒 Deduplication
     if message_id in SEEN_MESSAGE_IDS:
         return {"status": "duplicate_ignored"}
 
     SEEN_MESSAGE_IDS.add(message_id)
 
-    reply_text = "Signal Received"
-    # ⏱️ Rate limit gate
-    # ⏱️ Rate limit gate (BEFORE sending)
-    if not can_reply(sender):
-        return {"status": "rate_limited"}
-
-    try:
-        send_message(sender, reply_text)
-    except Exception as e:
-        print("SEND FAILED:", e)
-        return {"status": "send_failed"}
-
-# ✅ Mark reply ONLY after successful send
-    mark_replied(sender)
-
-    # 🧠 Update conversation state
     append_user_message(sender, text)
-    append_myno_message(sender, reply_text)
+
+    async def on_debounce_fire(sender: str, messages: list[str]):
+        combined = "\n".join(messages)
+        send_message(sender, "Signal Received")
+
+    await schedule(sender, on_debounce_fire)
 
     return {"status": "ok"}

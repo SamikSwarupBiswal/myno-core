@@ -1,34 +1,27 @@
-import hashlib
-from collections import deque
+import time
+from collections import defaultdict
+from typing import List, Optional
 
-MAX_TURNS = 6
-_CONVERSATIONS = {}
+# sender -> { messages: [str], last_ts: float }
+_CONVERSATIONS = defaultdict(lambda: {
+    "messages": [],
+    "last_ts": 0.0
+})
 
+def append_user_message(sender: str, text: str) -> None:
+    convo = _CONVERSATIONS[sender]
+    convo["messages"].append(text)
+    convo["last_ts"] = time.time()
 
-def _hash_user(phone: str) -> str:
-    return hashlib.sha256(phone.encode()).hexdigest()
+def pop_if_stable(sender: str, debounce_seconds: int) -> Optional[List[str]]:
+    convo = _CONVERSATIONS.get(sender)
+    if not convo:
+        return None
 
+    now = time.time()
+    if now - convo["last_ts"] >= debounce_seconds:
+        messages = convo["messages"][:]
+        _CONVERSATIONS.pop(sender, None)
+        return messages
 
-def get_conversation(phone: str):
-    user = _hash_user(phone)
-    return list(_CONVERSATIONS.get(user, []))
-
-
-def append_user_message(phone: str, text: str):
-    user = _hash_user(phone)
-    if user not in _CONVERSATIONS:
-        _CONVERSATIONS[user] = deque(maxlen=MAX_TURNS)
-    _CONVERSATIONS[user].append({
-        "role": "user",
-        "content": text
-    })
-
-
-def append_myno_message(phone: str, text: str):
-    user = _hash_user(phone)
-    if user not in _CONVERSATIONS:
-        _CONVERSATIONS[user] = deque(maxlen=MAX_TURNS)
-    _CONVERSATIONS[user].append({
-        "role": "assistant",
-        "content": text
-    })
+    return None
