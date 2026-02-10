@@ -9,4 +9,10 @@ META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN")
 WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 
 # Phase 2.0 — debounce window (seconds)
-DEBOUNCE_SECONDS = int(os.getenv("MYNO_DEBOUNCE_SECONDS", "3"))
+DEBOUNCE_SECONDS = int(os.getenv("MYNO_DEBOUNCE_SECONDS", "7"))
+
+# Phase 2.1 — fragment guard patience (seconds)
+FRAGMENT_GUARD_TIMEOUT = int(os.getenv("MYNO_FRAGMENT_GUARD_TIMEOUT", "10"))
+
+# Phase 2.2 — output rate limiting (seconds)
+OUTPUT_RATE_LIMIT_SECONDS = int(os.getenv("MYNO_OUTPUT_RATE_LIMIT_SECONDS", "5"))

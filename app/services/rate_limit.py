@@ -2,7 +2,7 @@ import time
 import hashlib
 
 # seconds
-RATE_LIMIT_WINDOW = 1
+RATE_LIMIT_WINDOW = 5
 
 _last_reply_at = {}
 

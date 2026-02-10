@@ -1,6 +1,9 @@
 from app.services.conversation import append_user_message
 from app.services.debounce import schedule
 from app.core.config import DEBOUNCE_SECONDS
+from app.routing.intent_closure import should_reply_now
+from app.services.llm import generate_reply
+from app.services.guard_timeout import schedule_guard_timeout
 
 
 from dotenv import load_dotenv
@@ -37,7 +40,7 @@ async def verify_webhook(request: Request):
 
 @app.post("/webhook")
 async def receive_message(request: Request):
-        body = await request.body()
+    body = await request.body()
 
     if os.getenv("MYNO_TEST_MODE") != "true":
         try:
@@ -79,7 +82,23 @@ async def receive_message(request: Request):
 
     async def on_debounce_fire(sender: str, messages: list[str]):
         combined = "\n".join(messages)
-        send_message(sender, "Signal Received")
+
+        allow, clarify = should_reply_now(sender, combined)
+
+        if not allow:
+        # Fragment detected → schedule ONE clarification after patience window
+            async def send_clarification(s: str):
+                send_message(s, "What would you like to know about?")
+
+            await schedule_guard_timeout(sender, send_clarification)
+            return
+
+        if clarify:
+            send_message(sender, "What would you like to know about?")
+            return
+
+        reply = generate_reply(combined)
+        send_message(sender, reply)
 
     await schedule(sender, on_debounce_fire)
 
