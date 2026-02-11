@@ -50,6 +50,8 @@ async def receive_message(request: Request):
 
     try:
         data = json.loads(body)
+        print("RAW PAYLOAD:", json.dumps(data, indent=2))
+
         entry = data.get("entry", [])[0]
         change = entry.get("changes", [])[0]
         value = change.get("value", {})
@@ -78,28 +80,55 @@ async def receive_message(request: Request):
 
     SEEN_MESSAGE_IDS.add(message_id)
 
+    print("INBOUND TEXT:", text)
+
     append_user_message(sender, text)
 
     async def on_debounce_fire(sender: str, messages: list[str]):
+        from app.services.rate_limit import can_reply, mark_replied
+        from app.services.llm import LLMError
+
         combined = "\n".join(messages)
 
-        allow, clarify = should_reply_now(sender, combined)
+        print("DEBOUNCE FIRED for:", sender)
+        print("Combined text:", combined)
 
+        allow, clarify = should_reply_now(sender, combined)
+        print("Intent decision:", allow, clarify)
+
+        # Fragment detected
         if not allow:
-        # Fragment detected → schedule ONE clarification after patience window
             async def send_clarification(s: str):
-                send_message(s, "What would you like to know about?")
+                if can_reply(s):
+                    send_message(s, "What would you like to know about?")
+                    mark_replied(s)
 
             await schedule_guard_timeout(sender, send_clarification)
             return
 
         if clarify:
-            send_message(sender, "What would you like to know about?")
+            if can_reply(sender):
+                send_message(sender, "What would you like to know about?")
+                mark_replied(sender)
             return
 
-        reply = generate_reply(combined)
-        send_message(sender, reply)
+        if not can_reply(sender):
+            print("RATE LIMITED")
+            return
 
+        try:
+            print("Calling LLM...")
+            reply = generate_reply(combined)
+            print("LLM reply:", reply)
+        except LLMError:
+            reply = "I'm having trouble thinking right now. Please try again in a moment."
+            print("LLM ERROR — using fallback")
+
+        print("Sending WhatsApp reply...")
+        send_message(sender, reply)
+        mark_replied(sender)
+
+    # 🔥 THIS WAS MISSING
     await schedule(sender, on_debounce_fire)
 
     return {"status": "ok"}
